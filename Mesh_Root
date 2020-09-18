@@ -1,0 +1,78 @@
+#include <Arduino.h>
+#include <painlessMesh.h>
+#include <PubSubClient.h>
+#include <WiFiClient.h>
+
+// Mesh & WiFi credentials
+#define   MESH_PREFIX     "parq"
+#define   MESH_PASSWORD   "parq"
+#define   MESH_PORT       5555
+
+#define   STATION_SSID     "camira_baneasa24"
+#define   STATION_PASSWORD "password"
+#define   HOSTNAME          "MQTT_Bridge"
+
+IPAddress myIP(0,0,0,0);
+IPAddress mqttBroker(192, 168, 0, 153);
+
+painlessMesh  mesh;
+WiFiClient wifiClient;
+PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);
+
+unsigned long previousMillis = 0;
+const long interval = 10000;
+
+// If the root receives a message, it determines the type and content
+// and publishes with a specific topic
+void receivedCallback(const uint32_t &from, const String &msg) {
+  Serial.printf("bridge: Received from %u msg=%s\n", from, msg.c_str());
+  if(msg[1] == 'p')
+    mqttClient.publish("mesh/spots", msg.c_str());
+  if(msg[1] == 'e')
+    mqttClient.publish("mesh/env", msg.c_str());
+}
+
+// If the root receives a reservation message, it broadcastss it to all the nodes
+void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
+  char* cleanPayload = (char*)malloc(length+1);
+  payload[length] = '\0';
+  memcpy(cleanPayload, payload, length+1);
+  String msg = String(cleanPayload);
+  free(cleanPayload);
+  Serial.println(msg);
+  mesh.sendBroadcast(msg);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE );
+  mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 6 );
+  mesh.onReceive(&receivedCallback);
+
+  mesh.stationManual(STATION_SSID, STATION_PASSWORD);
+  mesh.setHostname(HOSTNAME);
+
+  mesh.setRoot(true);
+  mesh.setContainsRoot(true);
+  mqttClient.subscribe("reserve");
+}
+
+void loop() {
+  mesh.update();
+  mqttClient.loop();
+
+  unsigned long currentMillis = millis();
+  
+  // Transmiterea mesajelor referitoare la RSSI
+  if(currentMillis - previousMillis >= interval){
+    previousMillis = currentMillis;
+    char rssi[50];
+    sprintf(rssi, "rssi host=32,rssi=%d", WiFi.RSSI());
+    mqttClient.publish("mesh/rssi", rssi);
+  }
+
+  if(mqttClient.connect("painlessMeshClient")){
+    mqttClient.subscribe("reserve");
+  }  
+}
