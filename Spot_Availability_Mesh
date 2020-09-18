@@ -3,7 +3,7 @@
 #include <PCF8574.h>
 #include <painlessMesh.h>
 
-// Definirea datelor de conectare la reteaua mesh
+// Mesh network config
 #define   MESH_PREFIX     "parq"
 #define   MESH_PASSWORD   "parq"
 #define   MESH_PORT       5555
@@ -11,11 +11,9 @@
 Scheduler userScheduler;
 painlessMesh  mesh;
 
-// Definirea celor doua variabile prin care se limiteaza publicarea mesajelor
 unsigned long previousMillis = 0;
 const long interval = 5000;
 
-// Definirea vectorilor utilizati la aflarea disponibilitatii locurilor de parcare
 char* spots[] = {"A1","A2","A3","A4","A5","A6"};
 long duration[6];
 long distance[6];
@@ -24,7 +22,6 @@ bool last_availability[6];
 int P[] = {P1, P2, P3, P4, P5, P6};
 int res[] = {0,0,0,0,0,0};
 
-// Definirea pinilor la care sunt conectati senzorii HC-SR04
 //senzor spot1
 int TRIG1 = 16;                  
 int ECHO1 = 17;                  
@@ -49,10 +46,8 @@ int ECHO5 = 33;
 int TRIG6 = 4;                  
 int ECHO6 = 5;                  
 
-// Initializarea modulului PCF8574 la adresa 0x20
 PCF8574 pcf8574(0x20);
 
-// Functie care returneaza distanta masurata de un senzor
 long measure_distance(int TRIG, int ECHO){
   digitalWrite(TRIG, LOW);
   delayMicroseconds(2);
@@ -65,7 +60,6 @@ long measure_distance(int TRIG, int ECHO){
   return distance;
 }
 
-// Function that decides if the spot is available or empty
 int check_availability(String spot, int led, int distance, bool availability){
     if (distance < 10) {
       Serial.print(spot);
@@ -85,7 +79,6 @@ int check_availability(String spot, int led, int distance, bool availability){
     }
 }
 
-// Functie prin care se determina starea actuala a locului
 bool check_update(int spot, bool availability, bool last_availability, long distance){
   if ( availability != last_availability ){
       char message[50];
@@ -98,23 +91,18 @@ bool check_update(int spot, bool availability, bool last_availability, long dist
     else return last_availability;
 }
 
-// Functie care se activeaza in momentul receptionarii unui mesaj de rezervare
 void receivedCallback(uint32_t from, String &msg) {
   char toSend[50];
-  
-  // Se decide ce loc de parcare trebuie rezervat/eliberat
   for (int i = 1; i <= 6; i++) {
     char y[3];
     itoa(i,y,10);
     if(msg[0]=='A' && msg[1]==y[0]){
-      // In cazul receptionarii caracterului 'y', locul de parcare trebuie rezervat
       if(msg[3]=='y'){
         res[i-1]=1;
         sprintf(toSend, "spotA%d distance=%d,availability=%d", i, 0, 2);
         mesh.sendSingle(3166741604, toSend);
         pcf8574.digitalWrite(P[i-1], HIGH);
       }
-      // In cazul receptionarii caracterului 'n', pentru loculul de parcare trebuie anulata rezervarea
       if(msg[3]=='n'){
         res[i-1]=0;
         sprintf(toSend, "spotA%d distance=%d,availability=%d", i, 20, 1);
@@ -126,7 +114,6 @@ void receivedCallback(uint32_t from, String &msg) {
   
 }
 
-// Functii specifice retelei mesh
 void newConnectionCallback(uint32_t nodeId) {
     Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
 }
@@ -142,10 +129,9 @@ void nodeTimeAdjustedCallback(int32_t offset) {
 void setup() {
   Serial.begin(115200);
 
-  // Se activeaza rezistentele de pull-up interne ale microcontrolerului
+  // Activates internal pull-up resistors
   Wire.begin();
   
-  // initializarea conexiunii la reteaua mesh
   mesh.setDebugMsgTypes(ERROR | STARTUP);
   mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT);
   
@@ -154,10 +140,8 @@ void setup() {
   mesh.onChangedConnections(&changedConnectionCallback);
   mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
 
-  // Se anunta microcontrolerul ca reteaua mesh are un nod radacina
   mesh.setContainsRoot(true);
 
-  // Set pinilor aflati pe modulul PCF8574
   pcf8574.pinMode(P1, OUTPUT);
   pcf8574.pinMode(P2, OUTPUT);
   pcf8574.pinMode(P3, OUTPUT);
@@ -166,7 +150,6 @@ void setup() {
   pcf8574.pinMode(P6, OUTPUT);
   pcf8574.begin();
 
-  // Pinii ECHO au modul INPUT, in timp ce pinii TRIG au modul OUTPUT
   pinMode(TRIG1, OUTPUT); 
   pinMode(ECHO1, INPUT);  
   pinMode(TRIG2, OUTPUT); 
@@ -182,10 +165,8 @@ void setup() {
 }
 
 void loop() {
-  // Se vor rula diverse sarcini de intretinere a retelei
   mesh.update();
 
-  // Se verifica daca a trecut intervalul de timp stabilit de la ultima masuratoare
   unsigned long currentMillis = millis();
   
   if(currentMillis - previousMillis >= interval){
@@ -197,8 +178,7 @@ void loop() {
     distance[3] = measure_distance(TRIG4, ECHO4);
     distance[4] = measure_distance(TRIG5, ECHO5);
     distance[5] = measure_distance(TRIG6, ECHO6);
-
-    // In cazul locurilor rezervate, nu se vor mai apela functiile de determinare a disponibilitatii
+    
     for(int i=0; i<6; i++){
       if (res[i] == 1) continue;
       availability[i] = check_availability(spots[i], P[i], distance[i], availability[i]);
