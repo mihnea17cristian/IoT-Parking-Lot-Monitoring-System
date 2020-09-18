@@ -4,9 +4,9 @@
 #include <PCF8574.h>
 #include <PubSubClient.h>
 
-// Definirea datelor de conectare la reteaua WLAN
-const char* ssid = "camira_baneasa24";
-const char* password = "1234crm98765";
+// WLAN Configuration
+const char* ssid = "network";
+const char* password = "password";
 const char* mqtt_server = "192.168.0.153";
 // Set your Static IP address
 IPAddress ip(192, 168, 0, 133);
@@ -14,17 +14,16 @@ IPAddress ip(192, 168, 0, 133);
 IPAddress gateway(192, 168, 0, 1);
 IPAddress subnet(255, 255, 0, 0);
 
-// Definirea celor doua variabile prin care se limiteaza masuratorile
+// Variables that limit the measurements
 unsigned long previousMillis = 0;
 const long interval = 5000;
 
-// Initializarea clientilor WiFi si MQTT
+// Initialising WiFi & MQTT clients
 WiFiClient esp32Client;
 PubSubClient client(esp32Client);
 
-// Functie de reconectare a clientului MQTT
+// Reconnects the MQTT client
 void reconnect() {
-  // Se efectueaza o bucla pana la momentul reconectarii
   while (!client.connected()) {
     if (client.connect("ESP32Client")) {
       Serial.println("conectat");  
@@ -32,19 +31,17 @@ void reconnect() {
     } else {
       Serial.print("esuat, rc=");
       Serial.print(client.state());
-      // Se asteapta 5 secunde pana la o noua reincercare
       delay(5000);
     }
   }
 }
 
-// Functie de reconectare a clientului la WLAN
+// Reconnects the client to WLAN
 void setup_wifi() {
   delay(1000);
   WiFi.mode(WIFI_STA);
   WiFi.config(ip, gateway, subnet);
   WiFi.begin(ssid, password);
-  // Bucla afiseaza un sir de puncte pana la momentul reconectarii
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -54,7 +51,6 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-// Definirea vectorilor utilizati la aflarea disponibilitatii locurilor de parcare
 char* spots[] = {"A1","A2","A3","A4","A5","A6"};
 long duration[6];
 long distance[6];
@@ -63,8 +59,6 @@ bool last_availability[6];
 int P[] = {P1, P2, P3, P4, P5, P6};
 int res[] = {0,0,0,0,0,0};
 
-
-// Definirea pinilor la care sunt conectati senzorii HC-SR04
 //senzor spotA1
 int TRIG1 = 16;                 
 int ECHO1 = 17;                 
@@ -90,10 +84,10 @@ int TRIG6 = 4;
 int ECHO6 = 5;                 
 
 
-// Initializarea modulului PCF8574 la adresa 0x20
+// Initialise PCF8574 module at 0x20
 PCF8574 pcf8574(0x20);
 
-// Functie care returneaza distanta masurata de un senzor
+// Returns the distance measured by a sensor
 long measure_distance(int TRIG, int ECHO){
   digitalWrite(TRIG, LOW);
   delayMicroseconds(2);
@@ -105,7 +99,7 @@ long measure_distance(int TRIG, int ECHO){
   return distance;
 }
 
-// Functie care se activeaza in momentul receptionarii unui mesaj de rezervare
+// Called when the MCU receives a reservation message
 void callback(char* topic, byte* message, unsigned int length){
   String messageTemp;
   char toSend[50];
@@ -114,19 +108,17 @@ void callback(char* topic, byte* message, unsigned int length){
     messageTemp += (char)message[i];
   }
 
-  // Se decide ce loc de parcare trebuie rezervat/eliberat
+  // Decides what parking spot needs to be reserved/freed
   for(int i = 1; i <= 6; i++){
     char y[3];
     itoa(i,y,10);
     if(messageTemp[0]=='A' && messageTemp[1]==y[0]){
-      // In cazul receptionarii caracterului 'y', locul de parcare trebuie rezervat
       if(messageTemp[3]=='y'){
         res[i-1]=1;
         sprintf(toSend, "spotA%d distance=%d,availability=%d", i, 0, 2);
         client.publish("esp32/spots", toSend);
         pcf8574.digitalWrite(P[i-1], HIGH);
       }
-      // In cazul receptionarii caracterului 'n', pentru loculul de parcare trebuie anulata rezervarea
       if(messageTemp[3]=='n'){
         res[i-1]=0;
         sprintf(toSend, "spotA%d distance=%d,availability=%d", i, 20, 1);
@@ -137,7 +129,7 @@ void callback(char* topic, byte* message, unsigned int length){
   }
 }
 
-// Functie prin care se determina starea actuala a locului
+// Determines the actual availability
 int check_availability(String spot, int led, int distance, bool availability){
     if (distance < 10) {
       Serial.print(spot);
@@ -157,7 +149,7 @@ int check_availability(String spot, int led, int distance, bool availability){
     }
 }
 
-// Functie care verifica daca locul si-a schimbat starea la ultima masuratoare
+// Verifies if the spot changed its availability
 bool check_update(int spot, bool availability, bool last_availability, long distance){
   if (availability != last_availability){
       char message[50];
@@ -175,10 +167,9 @@ void setup() {
   delay(1000);
   Serial.begin (115200);
 
-  // Se activeaza rezistentele de pull-up interne ale microcontrolerului
+  // Activates internal pull-up resistors
   Wire.begin();
 
-  // Set pinilor aflati pe modulul PCF8574
   pcf8574.pinMode(P1, OUTPUT);
   pcf8574.pinMode(P2, OUTPUT);
   pcf8574.pinMode(P3, OUTPUT);
@@ -186,8 +177,7 @@ void setup() {
   pcf8574.pinMode(P5, OUTPUT);
   pcf8574.pinMode(P6, OUTPUT);
   pcf8574.begin();
-
-  // Pinii ECHO au modul INPUT, in timp ce pinii TRIG au modul OUTPUT
+  
   pinMode(TRIG1, OUTPUT); 
   pinMode(ECHO1, INPUT);  
   pinMode(TRIG2, OUTPUT); 
@@ -201,8 +191,6 @@ void setup() {
   pinMode(TRIG6, OUTPUT); 
   pinMode(ECHO6, INPUT);  
 
-  // Se conecteaza nodul la WLAN si se completeaza configurarea clientului MQTT
-  // Se aboneaza nodul la topicul "reserve"
   WiFi.config(ip, gateway, subnet);
   setup_wifi();
   client.setServer(mqtt_server, 1883);
@@ -212,7 +200,6 @@ void setup() {
 }
 
 void loop() {
-  // Se verifica daca a trecut intervalul de timp stabilit de la ultima masuratoare
   unsigned long currentMillis = millis();
 
   if(currentMillis - previousMillis >= interval){
@@ -225,13 +212,11 @@ void loop() {
     distance[4] = measure_distance(TRIG5, ECHO5);
     distance[5] = measure_distance(TRIG6, ECHO6);
       
-    // In cazul unui loc rezervat, nu se vor mai prelucra datele de la senzorul respectiv
     for(int i=0; i<6; i++){
       if (res[i] == 1) continue;
       availability[i] = check_availability(spots[i], P[i], distance[i], availability[i]);
     }
-  
-    // Mecanism prin care se asigura conexiunea clientilor WiFi si MQTT, in vederea transmiterii mesajelor MQTT
+
     if(WiFi.status()== WL_CONNECTED){
       if(!client.connected())
         reconnect();
